@@ -3,7 +3,10 @@
     <!-- 系统内置 Theme.Material（API 21+），不引入 AppCompat / Material 库 -->
     <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">@color/paper</item>
+        <!-- 声明窗口自绘系统栏背景：否则 statusBarColor 不生效，沉浸式隐藏状态栏后顶部会留黑条 -->
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:statusBarColor">@color/paper</item>
+        <item name="android:navigationBarColor">@color/paper</item>
         <item name="android:colorAccent">@color/ink</item>
     </style>
 </resources>

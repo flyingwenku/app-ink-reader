@@ -253,10 +253,15 @@ class ReaderActivity : Activity() {
     @Suppress("DEPRECATION")
     private fun applyImmersive() {
         // API 30+ 的 WindowInsetsController 在 minSdk 21 下用不了，只能用这套 flag
+        // LAYOUT_* 三个标志让内容延伸到状态栏 / 导航栏底下：
+        // 缺了它们，窗口不重排，隐藏状态栏后顶部会留一条黑底
         window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
             )
     }
 
