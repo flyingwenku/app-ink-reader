@@ -113,6 +113,21 @@
             android:textSize="14sp" />
 
         <Button
+            android:id="@+id/btnExport"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="10dp"
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingStart="16dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp"
+            android:text="@string/export"
+            android:textColor="@color/ink"
+            android:textSize="14sp" />
+
+        <Button
             android:id="@+id/btnFontPlus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

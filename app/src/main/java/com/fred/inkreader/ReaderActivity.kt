@@ -1,6 +1,7 @@
 package com.fred.inkreader
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Intent
 import android.content.IntentFilter
 import android.graphics.Color
@@ -11,17 +12,20 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
-import android.view.MotionEvent
 import android.view.View
 import android.view.WindowManager
 import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.ContextCompat
 import com.fred.inkreader.epub.EpubBook
+import com.fred.inkreader.model.Highlight
+import com.fred.inkreader.model.NoteStore
+import com.fred.inkreader.model.NotesExporter
 import com.fred.inkreader.prefs.ReaderPrefs
 import com.fred.inkreader.ui.PageView
 import java.io.File
@@ -50,6 +54,7 @@ class ReaderActivity : Activity() {
     private lateinit var tocPanel: LinearLayout
     private lateinit var tocList: ListView
     private lateinit var prefs: ReaderPrefs
+    private lateinit var noteStore: NoteStore
 
     private var executor: ExecutorService = Executors.newSingleThreadExecutor()
     private var scanExecutor: ExecutorService = Executors.newSingleThreadExecutor()
@@ -73,6 +78,7 @@ class ReaderActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         prefs = ReaderPrefs(this)
+        noteStore = NoteStore(this)
 
         val path = intent.getStringExtra(EXTRA_PATH)
         if (path == null) {
@@ -103,16 +109,17 @@ class ReaderActivity : Activity() {
         findViewById<Button>(R.id.btnFontMinus).setOnClickListener { changeFont(-1) }
         findViewById<Button>(R.id.btnFontPlus).setOnClickListener { changeFont(1) }
 
-        pageView.setOnTouchListener { v, event ->
-            if (event.action == MotionEvent.ACTION_UP && !loading) {
-                when {
-                    event.x < v.width / 3f -> goPrev()
-                    event.x > v.width * 2f / 3f -> goNext()
-                    else -> toggleToolbar()
-                }
+        // 触摸逻辑全在 PageView 内（长按选句 / 把手 / 划线命中），这里只接结果
+        pageView.onPageTap = { ratio ->
+            if (!loading) when {
+                ratio < 1f / 3f -> goPrev()
+                ratio > 2f / 3f -> goNext()
+                else -> toggleToolbar()
             }
-            true
         }
+        pageView.onSelectionReady = { s, e -> showNoteDialog(null, s, e) }
+        pageView.onHighlightTap = { h -> showNoteDialog(h, h.start, h.end) }
+        findViewById<Button>(R.id.btnExport).setOnClickListener { exportNotes() }
 
         val (chapter, page) = prefs.position(bookId)
         loadChapter(chapter, page)
@@ -154,6 +161,7 @@ class ReaderActivity : Activity() {
                 loading = false
                 chapterIndex = index
                 pageView.apply(result, page)
+                pageView.highlights = noteStore.chapter(bookId, index)
                 tvChapter.text = titleOf(index)
                 savePosition()
                 updateInfo()
@@ -231,6 +239,119 @@ class ReaderActivity : Activity() {
 
     private fun hideToc() {
         tocPanel.visibility = View.GONE
+    }
+
+    // ===== 笔记 =====
+
+    /**
+     * 笔记框：existing 为空 = 新建；否则为查看 / 编辑已有条目。
+     * 笔记可以留空 —— 点确认即表示"只划线，不写笔记"。
+     */
+    private fun showNoteDialog(existing: Highlight?, start: Int, end: Int) {
+        val excerpt = pageView.textAt(start, end)
+        val preview = TextView(this).apply {
+            text = getString(R.string.note_excerpt, excerpt)
+            textSize = 13f
+            setTextColor(ContextCompat.getColor(this@ReaderActivity, R.color.ink_secondary))
+            setPadding(0, 0, 0, 12)
+        }
+        val input = EditText(this).apply {
+            setText(existing?.note ?: "")
+            hint = getString(R.string.note_hint)
+            setSingleLine(false)
+            maxLines = 6
+            setSelection(text.length)
+        }
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            val p = (20 * resources.displayMetrics.density).toInt()
+            setPadding(p, p / 2, p, 0)
+            addView(preview)
+            addView(input)
+        }
+
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(if (existing == null) R.string.note_title_new else R.string.note_title_edit)
+            .setView(box)
+            .setNegativeButton(R.string.note_cancel) { _, _ ->
+                pageView.clearSelection()
+                pageView.invalidate()
+            }
+            .setPositiveButton(R.string.note_save, null)
+            .apply {
+                if (existing != null) {
+                    setNeutralButton(R.string.note_delete) { _, _ -> deleteNote(existing) }
+                }
+            }
+            .create()
+
+        // 自己接管确认键：允许笔记留空直接确认
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                saveNote(start, end, excerpt, input.text.toString())
+                dialog.dismiss()
+            }
+        }
+        dialog.show()
+    }
+
+    private fun saveNote(start: Int, end: Int, excerpt: String, note: String) {
+        noteStore.upsert(
+            bookId,
+            Highlight(chapterIndex, start, end, excerpt, note.trim())
+        )
+        refreshHighlights()
+        pageView.clearSelection()
+        pageView.invalidate()
+        Toast.makeText(this, R.string.note_saved, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun deleteNote(h: Highlight) {
+        noteStore.remove(bookId, h)
+        refreshHighlights()
+        pageView.clearSelection()
+        pageView.invalidate()
+        Toast.makeText(this, R.string.note_deleted, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun refreshHighlights() {
+        pageView.highlights = noteStore.chapter(bookId, chapterIndex)
+    }
+
+    // ===== 导出（手动触发）=====
+
+    /** 选位置 + 默认文件名「书名.md」；同名即覆盖（写入模式 wt = 截断重写） */
+    private fun exportNotes() {
+        val list = noteStore.all(bookId)
+        if (list.isEmpty()) {
+            Toast.makeText(this, R.string.export_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "text/markdown"
+            putExtra(Intent.EXTRA_TITLE, noteStore.safe(book.title) + ".md")
+        }
+        try {
+            startActivityForResult(intent, REQ_EXPORT)
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.export_failed, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != REQ_EXPORT || resultCode != RESULT_OK) return
+        val uri = data?.data ?: return
+        try {
+            val md = NotesExporter.toMarkdown(noteStore.all(bookId))
+            contentResolver.openOutputStream(uri, "wt")?.use {
+                it.write(md.toByteArray(Charsets.UTF_8))
+            }
+            Toast.makeText(this, R.string.export_done, Toast.LENGTH_SHORT).show()
+        } catch (e: Exception) {
+            Toast.makeText(this, R.string.export_failed, Toast.LENGTH_SHORT).show()
+        }
     }
 
     // ===== 信息栏 =====
@@ -410,5 +531,6 @@ class ReaderActivity : Activity() {
 
     companion object {
         const val EXTRA_PATH = "book_path"
+        private const val REQ_EXPORT = 1001
     }
 }
