@@ -3,6 +3,8 @@ package com.fred.inkreader
 import android.app.Activity
 import android.content.Intent
 import android.content.IntentFilter
+import android.graphics.Color
+import android.graphics.Rect
 import android.os.BatteryManager
 import android.os.Bundle
 import android.os.Handler
@@ -229,11 +231,33 @@ class ReaderActivity : Activity() {
     private fun updateInfo() {
         val total = max(1, pageView.pageCount)
         val battery = batteryLevel()
-        tvInfo.text = if (battery >= 0) {
+        val info = if (battery >= 0) {
             getString(R.string.page_info, pageView.currentPage + 1, total, battery)
         } else {
             getString(R.string.page_info_plain, pageView.currentPage + 1, total)
         }
+        tvInfo.text = info + windowDiag()
+    }
+
+    /**
+     * 临时诊断：把窗口几何打在信息栏上。
+     * 用于一次性定位"顶部黑条"到底是窗口没铺满、还是布局被 inset 推下来。
+     * top>0  → 窗口可见区上沿有空洞（系统栏区域没被覆盖）
+     * decY>0 → 整个 decor 被推下来了
+     */
+    private fun windowDiag(): String {
+        val rect = Rect()
+        window.decorView.getWindowVisibleDisplayFrame(rect)
+        val sb = systemDimen("status_bar_height")
+        val nav = systemDimen("navigation_bar_height")
+        val loc = IntArray(2)
+        window.decorView.getLocationOnScreen(loc)
+        return " | D top=${rect.top} sb=$sb nav=$nav decY=${loc[1]}"
+    }
+
+    private fun systemDimen(name: String): Int {
+        val id = resources.getIdentifier(name, "dimen", "android")
+        return if (id > 0) resources.getDimensionPixelSize(id) else -1
     }
 
     /** 电量来自电池广播（sticky 广播，registerReceiver(null, ...) 即可同步拿到） */
@@ -252,9 +276,16 @@ class ReaderActivity : Activity() {
 
     @Suppress("DEPRECATION")
     private fun applyImmersive() {
-        // API 30+ 的 WindowInsetsController 在 minSdk 21 下用不了，只能用这套 flag
-        // LAYOUT_* 三个标志让内容延伸到状态栏 / 导航栏底下：
-        // 缺了它们，窗口不重排，隐藏状态栏后顶部会留一条黑底
+        // 全强度：主题 windowFullscreen + 运行时 FLAG_FULLSCREEN + 系统栏透明 + 沉浸式 flag
+        // （诊断阶段四个一起上，用排除法一次定位，定位后再收敛）
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_FULLSCREEN,
+            WindowManager.LayoutParams.FLAG_FULLSCREEN
+        )
+        window.statusBarColor = Color.TRANSPARENT
+        window.navigationBarColor = Color.TRANSPARENT
+        // API 30+ 的 WindowInsetsController 在 minSdk 21 下用不了，只能用这套 flag。
+        // LAYOUT_* 三个标志让内容延伸到状态栏 / 导航栏底下，缺了它们窗口不重排
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
