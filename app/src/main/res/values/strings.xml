@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">墨水阅读</string>
+
+    <!-- 入口页 -->
+    <string name="main_title">墨水阅读</string>
+    <string name="main_desc">纯离线 epub 阅读器 · 仿墨水屏观感</string>
+    <string name="open_book">打开 epub</string>
+    <string name="resume">继续阅读：%s</string>
+    <string name="no_file_manager">没有可用的文件管理器</string>
+    <string name="not_epub">无法打开：不是有效的 epub，或受 DRM 保护</string>
+    <string name="settings_version">版本 %s</string>
+
+    <!-- 阅读页 -->
+    <string name="loading">排版中…</string>
+    <string name="page_info">%1$d / %2$d 页 · 电量 %3$d%%</string>
+    <string name="page_info_plain">%1$d / %2$d 页</string>
+    <string name="first_page">已经是第一页</string>
+    <string name="last_page">已经是最后一页</string>
+    <string name="chapter_fallback">第 %d 章</string>
+    <string name="toc">目录</string>
+    <string name="font_minus">A-</string>
+    <string name="font_plus">A+</string>
+    <string name="close">关闭</string>
+    <string name="open_failed">无法打开这本书</string>
+</resources>

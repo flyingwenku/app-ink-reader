@@ -1,0 +1,113 @@
+# ===== 环境层：通用 Android 构建流水线 =====
+# 约定：本文件与具体应用无关。新项目复制后只需改 workflow 名称中的项目名。
+
+name: Android Build
+
+on:
+  push:
+    branches: [main]
+    # 优化点 #2：无关改动（如文档）不触发构建
+    paths:
+      - 'app/**'
+      - 'gradle/**'
+      - 'gradlew'
+      - '*.gradle.kts'
+      - '*.properties'
+      - '.github/workflows/android-build.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# 优化点 #3：新提交取消旧构建，避免排队空等
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Debug APK
+    # 固定 24.04：ubuntu-latest 已于 2026-10-19 迁移到 Ubuntu 26，
+    # android-actions/setup-android@v3 在其上会失败
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # 不用 android-actions/setup-android@v3：2026-09 起该 action 默认安装
+      # 已从 SDK 仓库移除的 legacy tools 包，必报 "Failed to find package 'tools'"。
+      # runner 镜像的 cmdline-tools 目录名带版本号（非 latest），sdkmanager 不在 PATH，
+      # 故自行定位；未预装则下载 cmdline-tools 兜底，并显式安装编译所需组件。
+      - name: Setup Android SDK
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "SDK 目录: $SDK"
+          ls "$SDK" || true
+          SDKM=$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n 1 || true)
+          if [ -z "$SDKM" ]; then
+            echo "sdkmanager 未预装，下载 cmdline-tools..."
+            mkdir -p "$SDK/cmdline-tools"
+            curl -sSL -o /tmp/clt.zip "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+            unzip -q /tmp/clt.zip -d /tmp/clt
+            mv /tmp/clt/cmdline-tools "$SDK/cmdline-tools/latest"
+            SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          echo "sdkmanager: $SDKM"
+          yes | "$SDKM" --licenses > /dev/null
+          "$SDKM" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+
+      # 优化点 #1：官方 Gradle action，自动缓存 caches / wrapper / build-cache
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # 主分支构建写入缓存；PR 构建只读，避免污染缓存
+          cache-read-only: ${{ github.ref != 'refs/heads/main' }}
+
+      # 保险：确保 gradlew 可执行且为 LF 行尾
+      # （Windows 提交可能带 CRLF，会导致 /bin/sh^M: bad interpreter）
+      - name: Prepare gradlew
+        run: |
+          chmod +x ./gradlew
+          sed -i 's/\r$//' ./gradlew
+
+      # 优化点 #4：assembleDebug，不用 build（跳过 lint / test / 多 variant）
+      - name: Build debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Collect APK info
+        id: apk
+        run: |
+          APK_PATH=$(find app/build/outputs/apk/debug -name "*.apk" | head -n 1)
+          echo "path=$APK_PATH" >> "$GITHUB_OUTPUT"
+          echo "size=$(du -h "$APK_PATH" | cut -f1)" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$APK_PATH")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          # 用仓库名动态命名：环境层复制到新项目后无需再改这里
+          name: ${{ github.event.repository.name }}-debug-${{ github.sha }}
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 30
+
+      - name: Build summary
+        run: |
+          {
+            echo "## 墨水阅读 构建成功"
+            echo ""
+            echo "| 项 | 值 |"
+            echo "|---|---|"
+            echo "| 文件 | \`${{ steps.apk.outputs.name }}\` |"
+            echo "| 大小 | ${{ steps.apk.outputs.size }} |"
+            echo "| Commit | \`${GITHUB_SHA::7}\` |"
+            echo ""
+            echo "**下载**：本页底部 Artifacts 区域"
+          } >> "$GITHUB_STEP_SUMMARY"

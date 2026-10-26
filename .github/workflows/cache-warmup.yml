@@ -1,0 +1,57 @@
+# ===== 环境层：构建缓存预热 =====
+# 优化点 #10：GitHub Actions 缓存 7 天未访问会被清理，
+#            每周跑一次构建可保持缓存热度，避免冷启动 8-15 分钟。
+
+name: Cache Warmup
+
+on:
+  schedule:
+    - cron: '0 3 * * 1'   # 每周一 03:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: cache-warmup
+  cancel-in-progress: true
+
+jobs:
+  warmup:
+    name: Warm Gradle Cache
+    # 固定 24.04，原因同 android-build.yml
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK
+        run: |
+          SDK="${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          SDKM=$(ls "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -n 1 || true)
+          if [ -z "$SDKM" ]; then
+            mkdir -p "$SDK/cmdline-tools"
+            curl -sSL -o /tmp/clt.zip "https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+            unzip -q /tmp/clt.zip -d /tmp/clt
+            mv /tmp/clt/cmdline-tools "$SDK/cmdline-tools/latest"
+            SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          yes | "$SDKM" --licenses > /dev/null
+          "$SDKM" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Prepare gradlew
+        run: |
+          chmod +x ./gradlew
+          sed -i 's/\r$//' ./gradlew
+
+      - name: Build
+        run: ./gradlew assembleDebug

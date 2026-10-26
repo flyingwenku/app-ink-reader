@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 纸张底色：刻意不用纯白，自发光屏上纯白刺眼 -->
+    <color name="paper">#F0ECE3</color>
+    <!-- 文字：刻意不用纯黑，纯黑对比过强易有眩光 -->
+    <color name="ink">#2B2B2B</color>
+    <!-- 次要文字（章节名 / 页码 / 电量） -->
+    <color name="ink_secondary">#7A7469</color>
+    <color name="divider">#D8D3C8</color>
+    <!-- 图标底色，与纸色一致 -->
+    <color name="launcher_bg">#F0ECE3</color>
+</resources>

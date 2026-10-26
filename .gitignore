@@ -1,0 +1,28 @@
+# ===== Gradle =====
+.gradle/
+build/
+app/build/
+local.properties
+
+# ===== IDE =====
+*.iml
+*.ipr
+*.iws
+.idea/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# ===== 签名（严禁提交） =====
+*.jks
+*.keystore
+keystore.properties
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== 构建产物 =====
+*.apk
+*.aab
+output-metadata.json

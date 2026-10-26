@@ -1,0 +1,6 @@
+# gradlew 必须是 LF 行尾，否则在 Linux runner 上会报
+# "/bin/sh^M: bad interpreter"
+gradlew        text eol=lf
+*.sh           text eol=lf
+gradlew.bat    text eol=crlf
+*.bat          text eol=crlf
