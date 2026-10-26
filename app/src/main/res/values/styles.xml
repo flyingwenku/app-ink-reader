@@ -9,4 +9,13 @@
         <item name="android:navigationBarColor">@color/paper</item>
         <item name="android:colorAccent">@color/ink</item>
     </style>
+
+    <!-- 阅读页专用：windowFullscreen 是经典全屏（API 1 起就有），
+         窗口会真正重排到状态栏之外，黑条从物理上不存在。
+         实测（2026-10-26）：仅靠 systemUiVisibility 的 LAYOUT_* 标志，
+         部分老机型窗口不重排，顶部仍留一条状态栏高度的黑底；
+         微信读书同类效果即此方案。导航栏仍由沉浸式 flag 处理。 -->
+    <style name="AppTheme.Reader" parent="AppTheme">
+        <item name="android:windowFullscreen">true</item>
+    </style>
 </resources>
