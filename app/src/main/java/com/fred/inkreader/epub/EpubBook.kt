@@ -35,6 +35,10 @@ class EpubBook(private val file: File) {
 
     private val hrefs = ArrayList<String>()
     private val titles = ArrayList<String?>()
+    /** 目录标题：spine href → 标题，来自 NCX / nav（比正文 <title> 可靠） */
+    private val tocLabels = HashMap<String, String>()
+    private var ncxPath = ""
+    private var navPath = ""
     private var zip: ZipFile? = null
     private var opfDir = ""
 
@@ -60,6 +64,7 @@ class EpubBook(private val file: File) {
                 z.close()
                 return false
             }
+            parseToc(z)
             repeat(hrefs.size) { titles.add(null) }
             zip = z
             true
@@ -91,7 +96,12 @@ class EpubBook(private val file: File) {
             val tag = m.value
             val id = attr(tag, "id")
             val href = attr(tag, "href")
-            if (id != null && href != null) manifest[id] = decode(href)
+            if (id != null && href != null) {
+                manifest[id] = decode(href)
+                // EPUB2 目录是 toc.ncx，EPUB3 是 properties="nav" 的 xhtml
+                if (attr(tag, "media-type") == "application/x-dtbncx+xml") ncxPath = decode(href)
+                if (attr(tag, "properties")?.contains("nav") == true) navPath = decode(href)
+            }
         }
 
         Regex("""(?s)<dc:title[^>]*>(.*?)</dc:title>""").find(opf)?.let { m ->
@@ -106,6 +116,55 @@ class EpubBook(private val file: File) {
 
     private fun attr(tag: String, name: String): String? =
         Regex("""\b$name="([^"]*)"""").find(tag)?.groupValues?.get(1)
+
+    /**
+     * 解析标准目录标题（EPUB2 的 NCX navMap / EPUB3 的 nav 文档）。
+     *
+     * 为什么必须做：正文 XHTML 的 `<title>` 常常直接填书名
+     * （实测《我看见的世界》每章标题都是"我看见的世界 - [美] 李飞飞"），
+     * 只有 NCX/nav 里才有微信读书那种"01 如坐针毡的华盛顿之行"。
+     */
+    private fun parseToc(z: ZipFile) {
+        if (ncxPath.isNotEmpty()) {
+            val ncx = readText(z, resolve(opfDir, ncxPath))
+            if (ncx != null) {
+                val dir = ncxPath.substringBeforeLast('/', "")
+                // navLabel + content 成对出现；正则按"text → 其后最近的 content"配对，
+                // 嵌套 navPoint 也能正确配对
+                Regex("""(?s)<text[^>]*>(.*?)</text>.*?<content\s+src="([^"]+)"""")
+                    .findAll(ncx)
+                    .forEach { m ->
+                        val label = htmlText(m.groupValues[1])
+                        val href = resolve(dir, decode(m.groupValues[2].substringBefore('#')))
+                        if (label.isNotEmpty() && !tocLabels.containsKey(href)) {
+                            tocLabels[href] = label
+                        }
+                    }
+            }
+        }
+        if (tocLabels.isEmpty() && navPath.isNotEmpty()) {
+            val nav = readText(z, resolve(opfDir, navPath)) ?: return
+            val dir = navPath.substringBeforeLast('/', "")
+            val block = Regex("""(?s)<nav\b[^>]*epub:type="toc"[^>]*>(.*?)</nav>""").find(nav)
+                ?.groupValues?.get(1)
+                ?: Regex("""(?s)<nav\b[^>]*>(.*?)</nav>""").find(nav)?.groupValues?.get(1)
+                ?: return
+            Regex("""(?is)<a\s[^>]*href="([^"]+)"[^>]*>(.*?)</a>""").findAll(block).forEach { m ->
+                val href = resolve(dir, decode(m.groupValues[1].substringBefore('#')))
+                val label = htmlText(m.groupValues[2])
+                if (label.isNotEmpty() && !tocLabels.containsKey(href)) {
+                    tocLabels[href] = label
+                }
+            }
+        }
+    }
+
+    private fun htmlText(s: String): String =
+        try {
+            Html.fromHtml(s).toString().trim()
+        } catch (e: Exception) {
+            s.trim()
+        }
 
     private fun decode(s: String): String =
         try {
@@ -232,7 +291,7 @@ class EpubBook(private val file: File) {
 
     fun scanTitle(index: Int) {
         if (index !in 0 until chapterCount) return
-        if (titles[index] != null) return
+        if (titles[index] != null || tocLabels.containsKey(hrefs[index])) return
         val z = zip ?: return
         val entry = z.getEntry(resolve(opfDir, hrefs[index])) ?: return
         val head = try {
@@ -256,8 +315,11 @@ class EpubBook(private val file: File) {
         if (plain.isNotEmpty()) titles[index] = plain
     }
 
-    /** 章节标题；尚未扫描到时返回空串（由调用方决定占位文案） */
-    fun chapterTitle(index: Int): String = titles[index] ?: ""
+    /** 章节标题：标准目录优先，正文 <title> 兜底（前者才可信） */
+    fun chapterTitle(index: Int): String {
+        tocLabels[hrefs[index]]?.let { return it }
+        return titles[index] ?: ""
+    }
 
     fun chapterTitles(): List<String> = (0 until chapterCount).map { chapterTitle(it) }
 }

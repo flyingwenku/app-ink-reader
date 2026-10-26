@@ -425,6 +425,10 @@ class PageView @JvmOverloads constructor(
         if (e < text.length && text[e] in bounds) e++      // 含句末标点
         if (e <= s) e = min(text.length, s + 1)
 
+        // 吃掉行首空白（首行缩进的全角空格不该出现在摘要里）
+        val ws = " \t\n　"
+        while (s < e && text[s] in ws) s++
+
         // 限制在当前页内
         val p = paged
         if (p != null) {

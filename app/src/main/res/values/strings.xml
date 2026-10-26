@@ -7,6 +7,7 @@
     <string name="main_desc">纯离线 epub 阅读器 · 仿墨水屏观感</string>
     <string name="open_book">打开 epub</string>
     <string name="resume">继续阅读：%s</string>
+    <string name="shelf_empty">还没有书。点上面按钮导入一本 epub（无 DRM）</string>
     <string name="no_file_manager">没有可用的文件管理器</string>
     <string name="not_epub">无法打开：不是有效的 epub，或受 DRM 保护</string>
     <string name="settings_version">版本 %s</string>

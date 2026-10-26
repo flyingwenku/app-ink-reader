@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.text.style.ImageSpan
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowManager
@@ -151,11 +152,17 @@ class ReaderActivity : Activity() {
     // ===== 加载与分页 =====
 
     /** @param jump 非空时：加载后直接定位到这条笔记所在页，并把该段高亮出来 */
-    private fun loadChapter(index: Int, page: Int, jump: Highlight? = null) {
+    private fun loadChapter(
+        index: Int,
+        page: Int,
+        jump: Highlight? = null,
+        skipDir: Int = 1,
+        skips: Int = 0
+    ) {
         val contentW = pageView.width - pageView.paddingLeft - pageView.paddingRight
         val contentH = pageView.height - pageView.paddingTop - pageView.paddingBottom
         if (contentW <= 0 || contentH <= 0) {
-            pageView.post { loadChapter(index, page, jump) }
+            pageView.post { loadChapter(index, page, jump, skipDir, skips) }
             return
         }
 
@@ -173,9 +180,26 @@ class ReaderActivity : Activity() {
                 prefs.fontSizeSp.toFloat(),
                 resources.displayMetrics.density
             )
+            // 空章节判定：封面/CSS 装帧页解析后既无文本也无图片
+            // （很多书的前几页是 SVG 封面或纯样式页，Html.fromHtml 出来是空的）
+            val hasImage = spanned.getSpans(0, spanned.length, ImageSpan::class.java).isNotEmpty()
+            val blank = spanned.toString().trim().isEmpty() && !hasImage
+
             handler.post {
                 // 连点时丢弃过期结果，避免页面错乱
                 if (seq != loadSeq) return@post
+                // 空章节自动沿方向跳过（上限全书章数，防全书皆空的死循环）
+                if (blank && skips < book.chapterCount) {
+                    val next = index + skipDir
+                    if (next in 0 until book.chapterCount) {
+                        loadChapter(
+                            next,
+                            if (skipDir > 0) 0 else Int.MAX_VALUE,
+                            null, skipDir, skips + 1
+                        )
+                        return@post
+                    }
+                }
                 loading = false
                 chapterIndex = index
                 pageView.apply(result, page)
@@ -221,7 +245,7 @@ class ReaderActivity : Activity() {
             return
         }
         if (chapterIndex > 0) {
-            loadChapter(chapterIndex - 1, Int.MAX_VALUE)
+            loadChapter(chapterIndex - 1, Int.MAX_VALUE, skipDir = -1)
         } else {
             Toast.makeText(this, R.string.first_page, Toast.LENGTH_SHORT).show()
         }
@@ -381,7 +405,7 @@ class ReaderActivity : Activity() {
         noteList.setOnItemClickListener { _, _, position, _ ->
             val h = targets[position] ?: return@setOnItemClickListener   // 分组行不跳转
             hideNotes()
-            loadChapter(h.chapter, 0, jump = h)
+            loadChapter(h.chapter, 0, jump = h, skipDir = 0)
         }
         notePanel.visibility = View.VISIBLE
     }

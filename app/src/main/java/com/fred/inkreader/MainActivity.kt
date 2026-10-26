@@ -8,7 +8,9 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.OpenableColumns
 import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Button
+import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
 import com.fred.inkreader.epub.EpubBook
@@ -18,24 +20,28 @@ import java.io.FileOutputStream
 import java.util.concurrent.Executors
 
 /**
- * 入口页：打开本地 epub / 继续上次阅读。
+ * 入口页：书架（多本书）+ 打开本地 epub。
  *
  * 打开方式用 Storage Access Framework（ACTION_OPEN_DOCUMENT），
  * 因此**不需要任何存储权限**——与项目二「不要定位权限」同一思路。
+ *
+ * 书架即私有目录 books/ 下的全部 epub（导入过的都在），按导入时间倒序。
  */
 class MainActivity : Activity() {
 
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var prefs: ReaderPrefs
-    private lateinit var btnResume: Button
+    private lateinit var bookList: ListView
+    private lateinit var tvEmpty: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         prefs = ReaderPrefs(this)
 
-        btnResume = findViewById(R.id.btnResume)
+        bookList = findViewById(R.id.bookList)
+        tvEmpty = findViewById(R.id.tvEmpty)
         findViewById<Button>(R.id.btnOpen).setOnClickListener { pickBook() }
         findViewById<TextView>(R.id.tvVersion).text =
             getString(R.string.settings_version, BuildConfig.VERSION_NAME)
@@ -43,15 +49,22 @@ class MainActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        val file = File(prefs.lastBook)
-        if (prefs.lastBook.isNotEmpty() && file.exists()) {
-            btnResume.visibility = View.VISIBLE
-            btnResume.text = getString(R.string.resume, file.nameWithoutExtension)
-            btnResume.setOnClickListener { open(file) }
-        } else {
-            btnResume.visibility = View.GONE
-        }
+        val books = shelfFiles()
+        bookList.adapter = ArrayAdapter(
+            this, android.R.layout.simple_list_item_1,
+            books.map { it.nameWithoutExtension }
+        )
+        bookList.setOnItemClickListener { _, _, position, _ -> open(books[position]) }
+        bookList.visibility = if (books.isEmpty()) View.GONE else View.VISIBLE
+        tvEmpty.visibility = if (books.isEmpty()) View.VISIBLE else View.GONE
     }
+
+    /** 书架：导入目录下所有 epub，最近导入的在前 */
+    private fun shelfFiles(): List<File> =
+        File(filesDir, "books")
+            .listFiles { f -> f.isFile && f.name.endsWith(".epub", true) }
+            ?.sortedByDescending { it.lastModified() }
+            ?: emptyList()
 
     @Suppress("DEPRECATION")
     private fun pickBook() {
