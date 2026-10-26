@@ -53,6 +53,10 @@ class ReaderActivity : Activity() {
     private lateinit var toolbar: LinearLayout
     private lateinit var tocPanel: LinearLayout
     private lateinit var tocList: ListView
+    private lateinit var notePanel: LinearLayout
+    private lateinit var noteList: ListView
+    private lateinit var noteBar: LinearLayout
+    private lateinit var tvSelInfo: TextView
     private lateinit var prefs: ReaderPrefs
     private lateinit var noteStore: NoteStore
 
@@ -101,13 +105,26 @@ class ReaderActivity : Activity() {
         toolbar = findViewById(R.id.toolbar)
         tocPanel = findViewById(R.id.tocPanel)
         tocList = findViewById(R.id.tocList)
+        notePanel = findViewById(R.id.notePanel)
+        noteList = findViewById(R.id.noteList)
+        noteBar = findViewById(R.id.noteBar)
+        tvSelInfo = findViewById(R.id.tvSelInfo)
 
         tvBook.text = book.title
 
         findViewById<Button>(R.id.btnToc).setOnClickListener { showToc() }
         findViewById<Button>(R.id.btnTocClose).setOnClickListener { hideToc() }
+        findViewById<Button>(R.id.btnNotes).setOnClickListener { showNotes() }
+        findViewById<Button>(R.id.btnNoteClose).setOnClickListener { hideNotes() }
         findViewById<Button>(R.id.btnFontMinus).setOnClickListener { changeFont(-1) }
         findViewById<Button>(R.id.btnFontPlus).setOnClickListener { changeFont(1) }
+        findViewById<Button>(R.id.btnExport).setOnClickListener { exportNotes() }
+
+        findViewById<Button>(R.id.btnSelWrite).setOnClickListener {
+            val r = pageView.selection ?: return@setOnClickListener
+            showNoteDialog(null, r.first, r.last + 1)
+        }
+        findViewById<Button>(R.id.btnSelCancel).setOnClickListener { dismissSelection() }
 
         // 触摸逻辑全在 PageView 内（长按选句 / 把手 / 划线命中），这里只接结果
         pageView.onPageTap = { ratio ->
@@ -117,9 +134,9 @@ class ReaderActivity : Activity() {
                 else -> toggleToolbar()
             }
         }
-        pageView.onSelectionReady = { s, e -> showNoteDialog(null, s, e) }
+        // 长按需先让用户调整选区，所以先浮出选区条，不直接弹输入框
+        pageView.onSelectionReady = { _, _ -> refreshNoteBar() }
         pageView.onHighlightTap = { h -> showNoteDialog(h, h.start, h.end) }
-        findViewById<Button>(R.id.btnExport).setOnClickListener { exportNotes() }
 
         val (chapter, page) = prefs.position(bookId)
         loadChapter(chapter, page)
@@ -133,11 +150,12 @@ class ReaderActivity : Activity() {
 
     // ===== 加载与分页 =====
 
-    private fun loadChapter(index: Int, page: Int) {
+    /** @param jump 非空时：加载后直接定位到这条笔记所在页，并把该段高亮出来 */
+    private fun loadChapter(index: Int, page: Int, jump: Highlight? = null) {
         val contentW = pageView.width - pageView.paddingLeft - pageView.paddingRight
         val contentH = pageView.height - pageView.paddingTop - pageView.paddingBottom
         if (contentW <= 0 || contentH <= 0) {
-            pageView.post { loadChapter(index, page) }
+            pageView.post { loadChapter(index, page, jump) }
             return
         }
 
@@ -162,6 +180,11 @@ class ReaderActivity : Activity() {
                 chapterIndex = index
                 pageView.apply(result, page)
                 pageView.highlights = noteStore.chapter(bookId, index)
+                if (jump != null) {
+                    // 跳回原文：页码由字符偏移反算，改过字号也不会错位
+                    pageView.gotoOffset(jump.start)
+                    pageView.selectRange(jump.start, jump.end)
+                }
                 tvChapter.text = titleOf(index)
                 savePosition()
                 updateInfo()
@@ -255,9 +278,9 @@ class ReaderActivity : Activity() {
             setTextColor(ContextCompat.getColor(this@ReaderActivity, R.color.ink_secondary))
             setPadding(0, 0, 0, 12)
         }
+        // 输入框不设 hint：实测"可留空"这类提示是多余的，占版面还干扰
         val input = EditText(this).apply {
             setText(existing?.note ?: "")
-            hint = getString(R.string.note_hint)
             setSingleLine(false)
             maxLines = 6
             setSelection(text.length)
@@ -273,10 +296,7 @@ class ReaderActivity : Activity() {
         val dialog = AlertDialog.Builder(this)
             .setTitle(if (existing == null) R.string.note_title_new else R.string.note_title_edit)
             .setView(box)
-            .setNegativeButton(R.string.note_cancel) { _, _ ->
-                pageView.clearSelection()
-                pageView.invalidate()
-            }
+            .setNegativeButton(R.string.note_cancel) { _, _ -> dismissSelection() }
             .setPositiveButton(R.string.note_save, null)
             .apply {
                 if (existing != null) {
@@ -301,22 +321,77 @@ class ReaderActivity : Activity() {
             Highlight(chapterIndex, start, end, excerpt, note.trim())
         )
         refreshHighlights()
-        pageView.clearSelection()
-        pageView.invalidate()
+        dismissSelection()
         Toast.makeText(this, R.string.note_saved, Toast.LENGTH_SHORT).show()
     }
 
     private fun deleteNote(h: Highlight) {
         noteStore.remove(bookId, h)
         refreshHighlights()
-        pageView.clearSelection()
-        pageView.invalidate()
+        dismissSelection()
         Toast.makeText(this, R.string.note_deleted, Toast.LENGTH_SHORT).show()
     }
 
     private fun refreshHighlights() {
         pageView.highlights = noteStore.chapter(bookId, chapterIndex)
     }
+
+    // ===== 选区条（长按后先调选区，再写笔记）=====
+
+    /** 长按或把手拖完都会走到这里：浮出选区条，让用户先调整再写 */
+    private fun refreshNoteBar() {
+        val r = pageView.selection
+        if (r == null) {
+            noteBar.visibility = View.GONE
+            return
+        }
+        val text = pageView.textAt(r.first, r.last + 1)
+        tvSelInfo.text = getString(R.string.selected_chars, text.length)
+        noteBar.visibility = View.VISIBLE
+    }
+
+    private fun dismissSelection() {
+        pageView.clearSelection()
+        pageView.invalidate()
+        noteBar.visibility = View.GONE
+    }
+
+    // ===== 笔记面板（App 内直接看，导出降为低频）=====
+
+    private fun showNotes() {
+        toolbar.visibility = View.GONE
+        val list = noteStore.all(bookId)
+        if (list.isEmpty()) {
+            Toast.makeText(this, R.string.export_empty, Toast.LENGTH_SHORT).show()
+            return
+        }
+        val rows = ArrayList<String>()
+        val targets = ArrayList<Highlight?>()   // 与 rows 同下标；null = 章节分组行
+        var lastChapter = -1
+        list.forEach { h ->
+            if (h.chapter != lastChapter) {
+                lastChapter = h.chapter
+                rows.add(titleOf(h.chapter))
+                targets.add(null)
+            }
+            rows.add(previewOf(h))
+            targets.add(h)
+        }
+        noteList.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, rows)
+        noteList.setOnItemClickListener { _, _, position, _ ->
+            val h = targets[position] ?: return@setOnItemClickListener   // 分组行不跳转
+            hideNotes()
+            loadChapter(h.chapter, 0, jump = h)
+        }
+        notePanel.visibility = View.VISIBLE
+    }
+
+    private fun hideNotes() {
+        notePanel.visibility = View.GONE
+    }
+
+    private fun previewOf(h: Highlight): String =
+        h.text.trim().replace('\n', ' ').let { if (it.length > 30) it.take(30) + "…" else it }
 
     // ===== 导出（手动触发）=====
 
@@ -344,7 +419,7 @@ class ReaderActivity : Activity() {
         if (requestCode != REQ_EXPORT || resultCode != RESULT_OK) return
         val uri = data?.data ?: return
         try {
-            val md = NotesExporter.toMarkdown(noteStore.all(bookId))
+            val md = NotesExporter.toMarkdown(noteStore.all(bookId)) { titleOf(it) }
             contentResolver.openOutputStream(uri, "wt")?.use {
                 it.write(md.toByteArray(Charsets.UTF_8))
             }
@@ -364,23 +439,7 @@ class ReaderActivity : Activity() {
         } else {
             getString(R.string.page_info_plain, pageView.currentPage + 1, total)
         }
-        tvInfo.text = info + windowDiag()
-    }
-
-    /**
-     * 临时诊断：把窗口几何打在信息栏上。
-     * 用于一次性定位"顶部黑条"到底是窗口没铺满、还是布局被 inset 推下来。
-     * top>0  → 窗口可见区上沿有空洞（系统栏区域没被覆盖）
-     * decY>0 → 整个 decor 被推下来了
-     */
-    private fun windowDiag(): String {
-        val rect = Rect()
-        window.decorView.getWindowVisibleDisplayFrame(rect)
-        val sb = systemDimen("status_bar_height")
-        val nav = systemDimen("navigation_bar_height")
-        val loc = IntArray(2)
-        window.decorView.getLocationOnScreen(loc)
-        return " | D top=${rect.top} sb=$sb nav=$nav decY=${loc[1]}"
+        tvInfo.text = info
     }
 
     private fun systemDimen(name: String): Int {

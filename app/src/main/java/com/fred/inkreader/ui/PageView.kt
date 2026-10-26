@@ -202,6 +202,35 @@ class PageView @JvmOverloads constructor(
         dragHandle = 0
     }
 
+    /** 当前选区（半开区间概念：first..last 含端点），无选区为 null */
+    val selection: IntRange?
+        get() = if (selEnd > selStart) selStart until selEnd else null
+
+    /** 只显示选区，不触发笔记流程（用于"跳回原文"时定位） */
+    fun selectRange(start: Int, end: Int) {
+        selStart = start
+        selEnd = max(start + 1, end)
+        dragHandle = 0
+        invalidate()
+    }
+
+    /** 字符偏移 → 页码 */
+    fun pageOf(offset: Int): Int {
+        val p = paged ?: return 0
+        var result = 0
+        for (i in 0 until p.pageCount) {
+            if (p.offsetOf(i) <= offset) result = i else break
+        }
+        return result
+    }
+
+    /** 跳到指定字符偏移所在页 */
+    fun gotoOffset(offset: Int) {
+        val p = paged ?: return
+        page = pageOf(offset).coerceIn(0, p.pageCount - 1)
+        invalidate()
+    }
+
     // ===== 绘制 =====
 
     override fun onDraw(canvas: Canvas) {

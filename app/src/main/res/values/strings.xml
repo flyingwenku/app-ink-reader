@@ -25,10 +25,12 @@
     <string name="open_failed">无法打开这本书</string>
 
     <!-- 笔记 -->
-    <string name="export">导出</string>
+    <string name="export">导出 md</string>
+    <string name="notes">笔记</string>
+    <string name="selected_chars">已选 %d 字</string>
     <string name="note_title_new">笔记</string>
     <string name="note_title_edit">笔记</string>
-    <string name="note_hint">写下笔记（可留空，留空即只划线）</string>
+    <string name="note_write">写笔记</string>
     <string name="note_excerpt">摘要：%s</string>
     <string name="note_save">确认</string>
     <string name="note_delete">删除</string>
