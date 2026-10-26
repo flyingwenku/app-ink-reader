@@ -6,6 +6,7 @@ import android.content.IntentFilter
 import android.graphics.Color
 import android.graphics.Rect
 import android.os.BatteryManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -19,6 +20,7 @@ import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.ContextCompat
 import com.fred.inkreader.epub.EpubBook
 import com.fred.inkreader.prefs.ReaderPrefs
 import com.fred.inkreader.ui.PageView
@@ -58,6 +60,11 @@ class ReaderActivity : Activity() {
     private var chapterIndex = 0
     private var loading = false
     private var loadSeq = 0
+
+    // 顶部开孔区处理：自检窗口是否铺满全屏，铺不满则退回纸色状态栏
+    private var selfChecked = false
+    private var paperStatusBarMode = false
+    private var topPadded = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -274,10 +281,34 @@ class ReaderActivity : Activity() {
 
     // ===== 生命周期 =====
 
+    /**
+     * 顶部黑条的真凶（2026-10-26 实测定位）：**挖孔 / 刘海屏的切割模式**。
+     *
+     * v1.2.2 诊断输出：`D top=111 sb=111 nav=2 decY=111`
+     * - sb=111px 远超常规状态栏（24dp≈66px），是"状态栏 + 开孔规避区"的高度
+     * - decY=111 说明整个窗口被系统压在开孔区之下，而状态栏又被我们隐藏了
+     *   → 上方 111px 没有任何窗口绘制，系统用黑边填充（挖孔屏的经典黑边）
+     *
+     * 解法（API 28+）：`layoutInDisplayCutoutMode = SHORT_EDGES`，让窗口延伸进开孔区，
+     * 顶部由我们自己接管（微信读书即此做法）。
+     * 若 ROM 仍不给（自检窗口位置），退回"显示纸色状态栏"——两条路都保证顶部不发黑。
+     */
     @Suppress("DEPRECATION")
     private fun applyImmersive() {
-        // 全强度：主题 windowFullscreen + 运行时 FLAG_FULLSCREEN + 系统栏透明 + 沉浸式 flag
-        // （诊断阶段四个一起上，用排除法一次定位，定位后再收敛）
+        if (paperStatusBarMode) {
+            applyPaperStatusBar()
+            return
+        }
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            val lp = window.attributes
+            lp.layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            window.attributes = lp
+        }
         window.setFlags(
             WindowManager.LayoutParams.FLAG_FULLSCREEN,
             WindowManager.LayoutParams.FLAG_FULLSCREEN
@@ -294,6 +325,47 @@ class ReaderActivity : Activity() {
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
             )
+
+        // 首次布局后自检：窗口到底铺没铺到 y=0
+        if (!selfChecked) {
+            selfChecked = true
+            window.decorView.post {
+                val loc = IntArray(2)
+                window.decorView.getLocationOnScreen(loc)
+                if (loc[1] > 0) {
+                    // ROM 仍把窗口压在开孔区之下 → 退路：显示状态栏并染成纸色
+                    paperStatusBarMode = true
+                    applyPaperStatusBar()
+                } else {
+                    // 铺满成功 → 内容自己让出开孔高度，避免标题顶进摄像头
+                    padTopForCutout()
+                }
+                updateInfo()
+            }
+        }
+    }
+
+    /** 窗口铺满时，让章节标题避开开孔区（该区域为纸色，不会发黑） */
+    private fun padTopForCutout() {
+        if (topPadded) return
+        topPadded = true
+        val sb = systemDimen("status_bar_height")
+        if (sb > 0) {
+            tvChapter.setPadding(
+                tvChapter.paddingLeft,
+                tvChapter.paddingTop + sb,
+                tvChapter.paddingRight,
+                tvChapter.paddingBottom
+            )
+        }
+    }
+
+    /** 退路：顶部显示状态栏并染成纸色（是"纸色 + 时钟电量"，不是黑条） */
+    @Suppress("DEPRECATION")
+    private fun applyPaperStatusBar() {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        window.statusBarColor = ContextCompat.getColor(this, R.color.paper)
+        window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_LAYOUT_STABLE
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
