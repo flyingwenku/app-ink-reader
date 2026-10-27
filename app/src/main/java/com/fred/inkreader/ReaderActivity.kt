@@ -58,6 +58,8 @@ class ReaderActivity : Activity() {
     private lateinit var noteList: ListView
     private lateinit var noteBar: LinearLayout
     private lateinit var tvSelInfo: TextView
+    private lateinit var topBar: LinearLayout
+    private lateinit var bottomBar: LinearLayout
     private lateinit var prefs: ReaderPrefs
     private lateinit var noteStore: NoteStore
 
@@ -110,6 +112,8 @@ class ReaderActivity : Activity() {
         noteList = findViewById(R.id.noteList)
         noteBar = findViewById(R.id.noteBar)
         tvSelInfo = findViewById(R.id.tvSelInfo)
+        topBar = findViewById(R.id.topBar)
+        bottomBar = findViewById(R.id.bottomBar)
 
         tvBook.text = book.title
 
@@ -137,6 +141,8 @@ class ReaderActivity : Activity() {
         }
         // 长按需先让用户调整选区，所以先浮出选区条，不直接弹输入框
         pageView.onSelectionReady = { _, _ -> refreshNoteBar() }
+        // 点空白取消选区：选区条自己消失，不必手动点取消
+        pageView.onSelectionCleared = { noteBar.visibility = View.GONE }
         pageView.onHighlightTap = { h -> showNoteDialog(h, h.start, h.end) }
 
         val (chapter, page) = prefs.position(bookId)
@@ -263,12 +269,22 @@ class ReaderActivity : Activity() {
 
     // ===== 工具条与目录 =====
 
+    /** 点屏幕中部：标题条 / 工具条 / 状态条一起出现或一起消失（正文全屏） */
     private fun toggleToolbar() {
-        toolbar.visibility = if (toolbar.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        val show = toolbar.visibility != View.VISIBLE
+        toolbar.visibility = if (show) View.VISIBLE else View.GONE
+        topBar.visibility = toolbar.visibility
+        bottomBar.visibility = toolbar.visibility
+    }
+
+    private fun hideChrome() {
+        toolbar.visibility = View.GONE
+        topBar.visibility = View.GONE
+        bottomBar.visibility = View.GONE
     }
 
     private fun showToc() {
-        toolbar.visibility = View.GONE
+        hideChrome()
         tocList.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, tocItems())
         tocList.setOnItemClickListener { _, _, position, _ ->
             hideToc()
@@ -278,11 +294,16 @@ class ReaderActivity : Activity() {
         tocPanel.visibility = View.VISIBLE
     }
 
-    private fun tocItems(): List<String> =
-        (0 until book.chapterCount).map { i ->
+    private fun tocItems(): List<String> {
+        val out = ArrayList<String>()
+        (0 until book.chapterCount).forEach { i ->
             val t = book.chapterTitle(i)
-            if (t.isEmpty()) getString(R.string.chapter_fallback, i + 1) else t
+            val label = if (t.isEmpty()) getString(R.string.chapter_fallback, i + 1) else t
+            // 章的切分碎片继承同名 -> 连续同名只显示第一条
+            if (out.isEmpty() || out.last() != label) out.add(label)
         }
+        return out
+    }
 
     private fun hideToc() {
         tocPanel.visibility = View.GONE
@@ -383,7 +404,7 @@ class ReaderActivity : Activity() {
     // ===== 笔记面板（App 内直接看，导出降为低频）=====
 
     private fun showNotes() {
-        toolbar.visibility = View.GONE
+        hideChrome()
         val list = noteStore.all(bookId)
         if (list.isEmpty()) {
             Toast.makeText(this, R.string.export_empty, Toast.LENGTH_SHORT).show()

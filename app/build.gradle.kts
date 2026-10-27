@@ -17,8 +17,8 @@ android {
         targetSdk = 35
 
         // 版本管理：每次发布都要递增，先改这里再提交。
-        versionCode = 9
-        versionName = "1.5"
+        versionCode = 10
+        versionName = "1.6"
 
         resourceConfigurations.add("zh")
     }

@@ -1,278 +1,292 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 阅读页：纯纸感，不放大按钮。
-     翻页 = 点屏幕左/右三分之一；工具条点中间三分之一唤出（浮层，不占版面）。 -->
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<!-- 阅读页：全屏只有正文。
+     章节标题（顶）与页码/电量（底）跟工具条一样默认隐藏，
+     点屏幕中部一起浮出，再点一起消失。
+     叠放次序：正文 < 顶/底信息条 < 工具条/选区条 < 目录/笔记面板 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="@color/paper"
-    android:orientation="vertical">
+    android:background="@color/paper">
 
-    <!-- 顶部：章节名 -->
-    <TextView
-        android:id="@+id/tvChapter"
+    <!-- 自绘分页 View：StaticLayout + canvas 平移，无 WebView -->
+    <com.fred.inkreader.ui.PageView
+        android:id="@+id/pageView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:paddingStart="18dp"
+        android:paddingTop="10dp"
+        android:paddingEnd="18dp"
+        android:paddingBottom="10dp" />
+
+    <!-- 顶部：章节名（浮层，默认隐藏） -->
+    <LinearLayout
+        android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:ellipsize="end"
-        android:letterSpacing="0.02"
-        android:paddingStart="18dp"
-        android:paddingTop="12dp"
-        android:paddingEnd="18dp"
-        android:paddingBottom="8dp"
-        android:singleLine="true"
-        android:textColor="@color/ink_secondary"
-        android:textSize="12sp" />
+        android:layout_gravity="top"
+        android:background="@color/paper"
+        android:orientation="vertical"
+        android:visibility="gone">
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/divider" />
-
-    <!-- 正文区。目录 / 笔记面板叠在正文之上；工具条与选区条是底部浮层，不挤压版面 -->
-    <FrameLayout
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1">
-
-        <!-- 自绘分页 View：StaticLayout + canvas 平移，无 WebView -->
-        <com.fred.inkreader.ui.PageView
-            android:id="@+id/pageView"
+        <TextView
+            android:id="@+id/tvChapter"
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:letterSpacing="0.02"
             android:paddingStart="18dp"
-            android:paddingTop="10dp"
+            android:paddingTop="12dp"
             android:paddingEnd="18dp"
-            android:paddingBottom="10dp" />
+            android:paddingBottom="8dp"
+            android:singleLine="true"
+            android:textColor="@color/ink_secondary"
+            android:textSize="12sp" />
 
-        <LinearLayout
-            android:id="@+id/tocPanel"
+        <View
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@color/paper"
-            android:orientation="vertical"
-            android:visibility="gone">
+            android:layout_height="1dp"
+            android:background="@color/divider" />
+    </LinearLayout>
 
-            <ListView
-                android:id="@+id/tocList"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:divider="@color/divider"
-                android:dividerHeight="1dp" />
+    <!-- 底部：书名 + 页码 / 电量（浮层，默认隐藏） -->
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@color/paper"
+        android:orientation="vertical"
+        android:visibility="gone">
 
-            <Button
-                android:id="@+id/btnTocClose"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/btn_ink"
-                android:minHeight="0dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp"
-                android:text="@string/close"
-                android:textColor="@color/ink"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <!-- 笔记面板：App 内直接看笔记，点条目跳回原文；导出在这里（低频） -->
-        <LinearLayout
-            android:id="@+id/notePanel"
+        <View
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:background="@color/paper"
-            android:orientation="vertical"
-            android:visibility="gone">
+            android:layout_height="1dp"
+            android:background="@color/divider" />
 
-            <Button
-                android:id="@+id/btnExport"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/btn_ink"
-                android:minHeight="0dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp"
-                android:text="@string/export"
-                android:textColor="@color/ink"
-                android:textSize="15sp" />
-
-            <ListView
-                android:id="@+id/noteList"
-                android:layout_width="match_parent"
-                android:layout_height="0dp"
-                android:layout_weight="1"
-                android:divider="@color/divider"
-                android:dividerHeight="1dp" />
-
-            <Button
-                android:id="@+id/btnNoteClose"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:background="@drawable/btn_ink"
-                android:minHeight="0dp"
-                android:paddingTop="10dp"
-                android:paddingBottom="10dp"
-                android:text="@string/close"
-                android:textColor="@color/ink"
-                android:textSize="15sp" />
-        </LinearLayout>
-
-        <!-- 工具条：浮层，默认隐藏，点屏幕中部唤出 -->
         <LinearLayout
-            android:id="@+id/toolbar"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@color/paper"
-            android:gravity="center"
             android:orientation="horizontal"
-            android:padding="8dp"
-            android:visibility="gone">
-
-            <Button
-                android:id="@+id/btnToc"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/btn_ink"
-                android:minHeight="0dp"
-                android:paddingStart="16dp"
-                android:paddingTop="8dp"
-                android:paddingEnd="16dp"
-                android:paddingBottom="8dp"
-                android:text="@string/toc"
-                android:textColor="@color/ink"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/btnNotes"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/btn_ink"
-                android:minHeight="0dp"
-                android:paddingStart="16dp"
-                android:paddingTop="8dp"
-                android:paddingEnd="16dp"
-                android:paddingBottom="8dp"
-                android:text="@string/notes"
-                android:textColor="@color/ink"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/btnFontMinus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/btn_ink"
-                android:minHeight="0dp"
-                android:paddingStart="14dp"
-                android:paddingTop="8dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="8dp"
-                android:text="@string/font_minus"
-                android:textColor="@color/ink"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/btnFontPlus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/btn_ink"
-                android:minHeight="0dp"
-                android:paddingStart="14dp"
-                android:paddingTop="8dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="8dp"
-                android:text="@string/font_plus"
-                android:textColor="@color/ink"
-                android:textSize="14sp" />
-        </LinearLayout>
-
-        <!-- 选区条：长按选好句子后在底部浮出，先调选区再写笔记 -->
-        <LinearLayout
-            android:id="@+id/noteBar"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_gravity="bottom"
-            android:background="@color/paper"
-            android:gravity="center_vertical"
-            android:orientation="horizontal"
-            android:padding="8dp"
-            android:visibility="gone">
+            android:paddingStart="18dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="18dp"
+            android:paddingBottom="10dp">
 
             <TextView
-                android:id="@+id/tvSelInfo"
+                android:id="@+id/tvBook"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:ellipsize="end"
-                android:paddingStart="6dp"
+                android:letterSpacing="0.02"
                 android:singleLine="true"
                 android:textColor="@color/ink_secondary"
+                android:textSize="11sp" />
+
+            <TextView
+                android:id="@+id/tvInfo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:letterSpacing="0.02"
+                android:textColor="@color/ink_secondary"
                 android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/btnSelCancel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:background="@drawable/btn_ink"
-                android:minHeight="0dp"
-                android:paddingStart="14dp"
-                android:paddingTop="8dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="8dp"
-                android:text="@string/note_cancel"
-                android:textColor="@color/ink"
-                android:textSize="14sp" />
-
-            <Button
-                android:id="@+id/btnSelWrite"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:background="@drawable/btn_ink"
-                android:minHeight="0dp"
-                android:paddingStart="14dp"
-                android:paddingTop="8dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="8dp"
-                android:text="@string/note_write"
-                android:textColor="@color/ink"
-                android:textSize="14sp" />
         </LinearLayout>
-    </FrameLayout>
+    </LinearLayout>
 
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/divider" />
-
-    <!-- 底部：书名 + 页码 / 电量（固定一行，聚合，不再叠加诊断信息） -->
+    <!-- 工具条：点屏幕中部与顶/底信息条一起出现 -->
     <LinearLayout
+        android:id="@+id/toolbar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@color/paper"
+        android:gravity="center"
         android:orientation="horizontal"
-        android:paddingStart="18dp"
-        android:paddingTop="8dp"
-        android:paddingEnd="18dp"
-        android:paddingBottom="10dp">
+        android:padding="8dp"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btnToc"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingStart="16dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp"
+            android:text="@string/toc"
+            android:textColor="@color/ink"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btnNotes"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingStart="16dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="16dp"
+            android:paddingBottom="8dp"
+            android:text="@string/notes"
+            android:textColor="@color/ink"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btnFontMinus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingStart="14dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="8dp"
+            android:text="@string/font_minus"
+            android:textColor="@color/ink"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btnFontPlus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingStart="14dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="8dp"
+            android:text="@string/font_plus"
+            android:textColor="@color/ink"
+            android:textSize="14sp" />
+    </LinearLayout>
+
+    <!-- 选区条：长按选好句子后浮出，点空白自动消失 -->
+    <LinearLayout
+        android:id="@+id/noteBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:background="@color/paper"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:padding="8dp"
+        android:visibility="gone">
 
         <TextView
-            android:id="@+id/tvBook"
+            android:id="@+id/tvSelInfo"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:ellipsize="end"
-            android:letterSpacing="0.02"
+            android:paddingStart="6dp"
             android:singleLine="true"
             android:textColor="@color/ink_secondary"
-            android:textSize="11sp" />
+            android:textSize="12sp" />
 
-        <TextView
-            android:id="@+id/tvInfo"
+        <Button
+            android:id="@+id/btnSelCancel"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:letterSpacing="0.02"
-            android:textColor="@color/ink_secondary"
-            android:textSize="12sp" />
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingStart="14dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="8dp"
+            android:text="@string/note_cancel"
+            android:textColor="@color/ink"
+            android:textSize="14sp" />
+
+        <Button
+            android:id="@+id/btnSelWrite"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingStart="14dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="8dp"
+            android:text="@string/note_write"
+            android:textColor="@color/ink"
+            android:textSize="14sp" />
     </LinearLayout>
 
-</LinearLayout>
+    <LinearLayout
+        android:id="@+id/tocPanel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/paper"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <ListView
+            android:id="@+id/tocList"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:divider="@color/divider"
+            android:dividerHeight="1dp" />
+
+        <Button
+            android:id="@+id/btnTocClose"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:text="@string/close"
+            android:textColor="@color/ink"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+    <!-- 笔记面板：App 内直接看笔记，点条目跳回原文；导出在这里（低频） -->
+    <LinearLayout
+        android:id="@+id/notePanel"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/paper"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btnExport"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:text="@string/export"
+            android:textColor="@color/ink"
+            android:textSize="15sp" />
+
+        <ListView
+            android:id="@+id/noteList"
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:divider="@color/divider"
+            android:dividerHeight="1dp" />
+
+        <Button
+            android:id="@+id/btnNoteClose"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@drawable/btn_ink"
+            android:minHeight="0dp"
+            android:paddingTop="10dp"
+            android:paddingBottom="10dp"
+            android:text="@string/close"
+            android:textColor="@color/ink"
+            android:textSize="15sp" />
+    </LinearLayout>
+
+</FrameLayout>

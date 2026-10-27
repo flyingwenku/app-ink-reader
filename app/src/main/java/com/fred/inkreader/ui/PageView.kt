@@ -61,6 +61,9 @@ class PageView @JvmOverloads constructor(
     /** 选区确定：长按选句完成，或把手拖完松手 */
     var onSelectionReady: ((Int, Int) -> Unit)? = null
 
+    /** 选区被取消（点空白 / 翻页 / 换章），Activity 据此收起选区条 */
+    var onSelectionCleared: (() -> Unit)? = null
+
     /** 当前章的划线，用于绘制下划线；赋值即重绘 */
     var highlights: List<Highlight> = emptyList()
         set(value) {
@@ -197,9 +200,11 @@ class PageView @JvmOverloads constructor(
     }
 
     fun clearSelection() {
+        val had = selEnd > selStart
         selStart = -1
         selEnd = -1
         dragHandle = 0
+        if (had) onSelectionCleared?.invoke()
     }
 
     /** 当前选区（半开区间概念：first..last 含端点），无选区为 null */

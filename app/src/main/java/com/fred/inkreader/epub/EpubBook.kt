@@ -118,11 +118,13 @@ class EpubBook(private val file: File) {
         Regex("""\b$name="([^"]*)"""").find(tag)?.groupValues?.get(1)
 
     /**
-     * 解析标准目录标题（EPUB2 的 NCX navMap / EPUB3 的 nav 文档）。
+     * 解析标准目录标题：EPUB2 的 NCX navMap / EPUB3 的 nav 文档。
      *
-     * 为什么必须做：正文 XHTML 的 `<title>` 常常直接填书名
-     * （实测《我看见的世界》每章标题都是"我看见的世界 - [美] 李飞飞"），
-     * 只有 NCX/nav 里才有微信读书那种"01 如坐针毡的华盛顿之行"。
+     * 实测教训（calibre 转换的书）：
+     * 1. NCX 的 `<text>` 可能整体是乱码（UTF-8 被当 GBK 写回），标签都残缺；
+     *    而同一本书的 nav.xhtml 是干净的 → **NCX 有乱码就整体回退到 nav**
+     * 2. 一章常被切成多个 spine 文件，NCX 只标第一个 →
+     *    其余碎片**继承前一个文件的章节名**（否则目录一半是书名）
      */
     private fun parseToc(z: ZipFile) {
         if (ncxPath.isNotEmpty()) {
@@ -140,6 +142,7 @@ class EpubBook(private val file: File) {
                             tocLabels[href] = label
                         }
                     }
+                if (hasMojibake(tocLabels.values)) tocLabels.clear()
             }
         }
         if (tocLabels.isEmpty() && navPath.isNotEmpty()) {
@@ -155,6 +158,36 @@ class EpubBook(private val file: File) {
                 if (label.isNotEmpty() && !tocLabels.containsKey(href)) {
                     tocLabels[href] = label
                 }
+            }
+        }
+        inheritLabels()
+    }
+
+    /** 乱码特征：GBK 双字节区（U+4E00 之外的 CJK 扩展块大量出现）+ 替换符 */
+    private fun hasMojibake(labels: Collection<String>): Boolean {
+        if (labels.isEmpty()) return false
+        var bad = 0
+        for (label in labels) {
+            for (ch in label) {
+                if (ch == '\uFFFD') return true
+                val b = ch.code
+                // UTF-8 中文按 GBK 误读后会落在 CJK 部件扩展/兼容区，常规中文不在这两块
+                if (b in 0x3400..0x4DBF || b in 0xF900..0xFAFF || b in 0xE000..0xF8FF) bad++
+            }
+        }
+        // 阈值放宽到 2：真实章名里出现私用区字符的几乎不存在
+        return bad >= 2
+    }
+
+    /** 没有自己的目录条目的 spine 文件（章的切分碎片）继承前一个文件的章节名 */
+    private fun inheritLabels() {
+        var last: String? = null
+        for (i in hrefs.indices) {
+            val own = tocLabels[hrefs[i]]
+            if (own != null) {
+                last = own
+            } else if (last != null) {
+                tocLabels[hrefs[i]] = last
             }
         }
     }
