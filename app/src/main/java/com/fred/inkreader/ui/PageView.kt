@@ -55,6 +55,12 @@ class PageView @JvmOverloads constructor(
     /** 普通点击：参数是 x / width，交给 Activity 判断左翻页 / 右翻页 / 工具条 */
     var onPageTap: ((Float) -> Unit)? = null
 
+    /**
+     * 横向滑动翻页：true = 下一页（右→左），false = 上一页（左→右）。
+     * 单手握持时不用把拇指挪到左边缘去点，贴哪只手都能翻。
+     */
+    var onSwipe: ((Boolean) -> Unit)? = null
+
     /** 点到已有划线 */
     var onHighlightTap: ((Highlight) -> Unit)? = null
 
@@ -79,11 +85,15 @@ class PageView @JvmOverloads constructor(
     private var selEnd = -1
     private var dragHandle = 0          // 0=无 1=起点把手 2=终点把手
     private var longPressFired = false
+    private var swiped = false          // 本次按压是否已触发过滑动翻页（防一次手势翻多页）
     private var downX = 0f
     private var downY = 0f
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private val density: Float get() = resources.displayMetrics.density
+
+    /** 触发翻页的横向拖动距离：屏宽约 1/5，拇指一小段位移即可（不用滑到底） */
+    private val swipeDistance: Float get() = width * 0.22f
     private val handler = Handler(Looper.getMainLooper())
 
     private val selPaint = Paint().apply {
@@ -316,6 +326,7 @@ class PageView @JvmOverloads constructor(
                 downX = event.x
                 downY = event.y
                 longPressFired = false
+                swiped = false
                 dragHandle = handleAt(event.x, event.y)
                 if (dragHandle == 0) {
                     handler.removeCallbacks(longPressRun)
@@ -338,6 +349,16 @@ class PageView @JvmOverloads constructor(
                         }
                         invalidate()
                     }
+                } else if (!swiped) {
+                    // 横向为主、且够长的拖动 = 翻页；一次按压只翻一次
+                    val dx = event.x - downX
+                    val dy = event.y - downY
+                    if (abs(dx) > swipeDistance && abs(dx) > abs(dy) * 1.5f) {
+                        swiped = true
+                        clearSelection()
+                        invalidate()
+                        onSwipe?.invoke(dx < 0)   // dx<0：右→左，下一页
+                    }
                 }
                 return true
             }
@@ -351,6 +372,7 @@ class PageView @JvmOverloads constructor(
                         dragHandle = 0
                         if (selEnd > selStart) onSelectionReady?.invoke(selStart, selEnd)
                     }
+                    swiped -> { /* 已经翻过页了，不能再当点击处理 */ }
                     longPressFired -> { /* 长按已处理，保持选区供把手调整 */ }
                     !moved -> {
                         val off = offsetAt(event.x, event.y)

@@ -142,6 +142,10 @@ class ReaderActivity : Activity() {
                 else -> toggleToolbar()
             }
         }
+        // 横向滑动翻页：右→左下一页，左→右上一页（单手贴屏就能翻，不用够到左边缘）
+        pageView.onSwipe = { next ->
+            if (!loading) if (next) goNext() else goPrev()
+        }
         // 长按需先让用户调整选区，所以先浮出选区条，不直接弹输入框
         pageView.onSelectionReady = { _, _ -> refreshNoteBar() }
         // 点空白取消选区：选区条自己消失，不必手动点取消
