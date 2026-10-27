@@ -37,10 +37,26 @@ class EpubBook(private val file: File) {
     private val titles = ArrayList<String?>()
     /** 目录标题：spine href → 标题，来自 NCX / nav（比正文 <title> 可靠） */
     private val tocLabels = HashMap<String, String>()
+    /** 原始目录条目：同一文件可有多条（Kindle 转换书的一章 = 文件内锚点片段） */
+    private val rawToc = ArrayList<RawToc>()
+    /** 文件 → 文件内锚点列表（文档序），用于排版时反算锚点偏移 */
+    private val tocAnchors = HashMap<String, MutableList<String>>()
+    /** 最近一次排版的各章锚点偏移：章下标 → (锚点 → 字符偏移) */
+    private val anchorOffsets = HashMap<Int, Map<String, Int>>()
     private var ncxPath = ""
     private var navPath = ""
     private var zip: ZipFile? = null
     private var opfDir = ""
+
+    private class RawToc(val href: String, val anchor: String, val label: String)
+
+    private companion object {
+        /** 锚点标记字符（私用区，不会出现在正常书里） */
+        val MARKER = '\uE000'
+    }
+
+    /** 目录条目：anchor 非空时跳转到文件内锚点位置，否则章首 */
+    class TocEntry(val label: String, val chapter: Int, val anchor: String?)
 
     val chapterCount: Int
         get() = hrefs.size
@@ -137,15 +153,23 @@ class EpubBook(private val file: File) {
                     .findAll(ncx)
                     .forEach { m ->
                         val label = htmlText(m.groupValues[1])
-                        val href = resolve(dir, decode(m.groupValues[2].substringBefore('#')))
-                        if (label.isNotEmpty() && !tocLabels.containsKey(href)) {
-                            tocLabels[href] = label
+                        val src = m.groupValues[2]
+                        val href = resolve(dir, decode(src.substringBefore('#')))
+                        val anchor = decode(src.substringAfter('#', ""))
+                        if (label.isNotEmpty()) {
+                            rawToc.add(RawToc(href, anchor, label))
+                            if (!tocLabels.containsKey(href)) tocLabels[href] = label
+                            if (anchor.isNotEmpty()) {
+                                tocAnchors.getOrPut(href) { mutableListOf() }.add(anchor)
+                            }
                         }
                     }
-                if (hasMojibake(tocLabels.values)) tocLabels.clear()
+                if (hasMojibake(rawToc.map { it.label })) {
+                    tocLabels.clear(); rawToc.clear(); tocAnchors.clear()
+                }
             }
         }
-        if (tocLabels.isEmpty() && navPath.isNotEmpty()) {
+        if (rawToc.isEmpty() && navPath.isNotEmpty()) {
             val nav = readText(z, resolve(opfDir, navPath)) ?: return
             val dir = navPath.substringBeforeLast('/', "")
             val block = Regex("""(?s)<nav\b[^>]*epub:type="toc"[^>]*>(.*?)</nav>""").find(nav)
@@ -153,15 +177,38 @@ class EpubBook(private val file: File) {
                 ?: Regex("""(?s)<nav\b[^>]*>(.*?)</nav>""").find(nav)?.groupValues?.get(1)
                 ?: return
             Regex("""(?is)<a\s[^>]*href="([^"]+)"[^>]*>(.*?)</a>""").findAll(block).forEach { m ->
-                val href = resolve(dir, decode(m.groupValues[1].substringBefore('#')))
+                val src = m.groupValues[1]
+                val href = resolve(dir, decode(src.substringBefore('#')))
+                val anchor = decode(src.substringAfter('#', ""))
                 val label = htmlText(m.groupValues[2])
-                if (label.isNotEmpty() && !tocLabels.containsKey(href)) {
-                    tocLabels[href] = label
+                if (label.isNotEmpty()) {
+                    rawToc.add(RawToc(href, anchor, label))
+                    if (!tocLabels.containsKey(href)) tocLabels[href] = label
+                    if (anchor.isNotEmpty()) {
+                        tocAnchors.getOrPut(href) { mutableListOf() }.add(anchor)
+                    }
                 }
             }
         }
         inheritLabels()
     }
+
+    /**
+     * 目录条目（章序排列）。
+     * 同一文件可产生多条（Kindle 转换书：一章 = 文件内一个 id 锚点），
+     * 点击时用锚点偏移跳到文件内的章首，不再丢章。
+     */
+    fun tocEntryList(): List<TocEntry> {
+        val index = HashMap<String, Int>()
+        hrefs.forEachIndexed { i, h -> index[h] = i }
+        return rawToc.mapNotNull { e ->
+            index[e.href]?.let { TocEntry(e.label, it, e.anchor.ifEmpty { null }) }
+        }.sortedBy { it.chapter }   // 稳定排序：同章内保持目录文档序
+    }
+
+    /** 目录跳转用：锚点在章内字符流中的偏移；未知返回 -1（退化为章首） */
+    fun anchorOffset(index: Int, anchor: String): Int =
+        anchorOffsets[index]?.get(anchor) ?: -1
 
     /** 乱码特征：GBK 双字节区（U+4E00 之外的 CJK 扩展块大量出现）+ 替换符 */
     private fun hasMojibake(labels: Collection<String>): Boolean {
@@ -182,14 +229,19 @@ class EpubBook(private val file: File) {
     /** 没有自己的目录条目的 spine 文件（章的切分碎片）继承前一个文件的章节名 */
     private fun inheritLabels() {
         var last: String? = null
+        val labeled = HashSet<String>()
         for (i in hrefs.indices) {
-            val own = tocLabels[hrefs[i]]
+            val href = hrefs[i]
+            val own = tocLabels[href]
             if (own != null) {
                 last = own
+                labeled.add(href)
             } else if (last != null) {
-                tocLabels[hrefs[i]] = last
+                tocLabels[href] = last
+                rawToc.add(RawToc(href, "", last))
             }
         }
+        // 收集每个文件自己的目录条目（含继承），供 tocEntryList 使用
     }
 
     private fun htmlText(s: String): String =
@@ -243,7 +295,8 @@ class EpubBook(private val file: File) {
      */
     fun chapterSpanned(index: Int, res: Resources, maxWidth: Int): Spanned {
         val source = raw(index) ?: return SpannableString("")
-        val html = cleanHtml(source)
+        val anchors = tocAnchors[hrefs[index]] ?: emptyList()
+        val html = cleanHtml(source, anchors)
         val base = resolve(opfDir, hrefs[index].substringBeforeLast('/', ""))
         val getter = Html.ImageGetter { src -> loadImage(src, base, res, maxWidth) }
         val spanned = try {
@@ -251,16 +304,45 @@ class EpubBook(private val file: File) {
         } catch (e: Exception) {
             fallbackSpanned(source)
         }
-        return trimTrailing(spanned)
+        return trimTrailing(stripMarkers(spanned, anchors, index))
+    }
+
+    /**
+     * 摘掉锚点标记字符，同时按原位置记录每个锚点的正文偏移（供目录跳转）。
+     * 标记按文档序与 anchors 一一对应；扫描时边删边记，
+     * 记录值恰好等于删除全部标记后的偏移（每个更早的标记恰好左移一位）。
+     */
+    private fun stripMarkers(s: Spanned, anchors: List<String>, index: Int): Spanned {
+        if (anchors.isEmpty()) {
+            anchorOffsets.remove(index)
+            return s
+        }
+        val b = SpannableStringBuilder(s)
+        val positions = ArrayList<Int>()
+        var i = 0
+        while (i < b.length) {
+            if (b[i] == MARKER) {
+                positions.add(i)
+                b.delete(i, i + 1)
+            } else {
+                i++
+            }
+        }
+        val map = HashMap<String, Int>()
+        anchors.forEachIndexed { k, a ->
+            if (k < positions.size) map[a] = positions[k]
+        }
+        anchorOffsets[index] = map
+        return SpannableString(b)
     }
 
     private fun fallbackSpanned(source: String): Spanned {
         // 极端情况（标签严重不规范）下退化为纯文本，保证至少有内容可读
-        val plain = Regex("""(?s)<[^>]*>""").replace(cleanHtml(source), "")
+        val plain = Regex("""(?s)<[^>]*>""").replace(cleanHtml(source, emptyList()), "")
         return SpannableString(plain)
     }
 
-    private fun cleanHtml(xhtml: String): String {
+    private fun cleanHtml(xhtml: String, anchors: List<String>): String {
         var s = xhtml
         val bodyStart = s.indexOf("<body", 0, true)
         if (bodyStart >= 0) {
@@ -273,6 +355,12 @@ class EpubBook(private val file: File) {
         s = Regex("(?is)<!--.*?-->").replace(s, "")
         // 首行缩进 2 字符：中文排版习惯（替代西文的首字下沉）
         s = Regex("""(?i)<p(\s[^>]*)?>""").replace(s, "<p$1>　　")
+        // 目录锚点：在带 id 的元素开头插入标记字符，
+        // Html.fromHtml 后按文档序扫描标记即可反算出各锚点的字符偏移
+        for (a in anchors) {
+            s = Regex("""(<[a-zA-Z][^>]*\bid="${Regex.escape(a)}"[^>]*>)""")
+                .replace(s, "$1$MARKER")
+        }
         return s
     }
 

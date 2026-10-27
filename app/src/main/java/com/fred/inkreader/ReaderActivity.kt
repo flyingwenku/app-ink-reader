@@ -165,6 +165,7 @@ class ReaderActivity : Activity() {
         index: Int,
         page: Int,
         jump: Highlight? = null,
+        anchor: String? = null,
         skipDir: Int = 1,
         skips: Int = 0
     ) {
@@ -172,7 +173,7 @@ class ReaderActivity : Activity() {
         val contentW = pageView.width - pageView.paddingLeft - pageView.paddingRight
         val contentH = pageView.height - pageView.paddingTop - pageView.paddingBottom
         if (contentW <= 0 || contentH <= 0) {
-            pageView.post { loadChapter(index, page, jump, skipDir, skips) }
+            pageView.post { loadChapter(index, page, jump, anchor, skipDir, skips) }
             return
         }
 
@@ -205,7 +206,10 @@ class ReaderActivity : Activity() {
                         loadChapter(
                             next,
                             if (skipDir > 0) 0 else Int.MAX_VALUE,
-                            null, skipDir, skips + 1
+                            jump = null,
+                            anchor = null,
+                            skipDir = skipDir,
+                            skips = skips + 1
                         )
                         return@post
                     }
@@ -218,6 +222,11 @@ class ReaderActivity : Activity() {
                     // 跳回原文：页码由字符偏移反算，改过字号也不会错位
                     pageView.gotoOffset(jump.start)
                     pageView.selectRange(jump.start, jump.end)
+                }
+                if (anchor != null) {
+                    // 目录锚点跳转：定位到文件内锚点所在页（未知则留在章首）
+                    val off = book.anchorOffset(index, anchor)
+                    if (off >= 0) pageView.gotoOffset(off)
                 }
                 tvChapter.text = titleOf(index)
                 savePosition()
@@ -289,24 +298,39 @@ class ReaderActivity : Activity() {
 
     private fun showToc() {
         hideChrome()
-        tocList.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, tocItems())
+        val entries = tocRows()
+        tocList.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, entries.map { it.label })
         tocList.setOnItemClickListener { _, _, position, _ ->
             hideToc()
-            loadChapter(position, 0)
+            val e = entries[position]
+            loadChapter(e.chapter, 0, anchor = e.anchor, skipDir = 0)
         }
-        tocList.setSelection(chapterIndex)
+        // 定位到当前章所在的目录项（含文件内锚点条目）
+        tocList.setSelection(entries.indexOfFirst { it.chapter >= chapterIndex }.takeIf { it >= 0 } ?: 0)
         tocPanel.visibility = View.VISIBLE
     }
 
-    private fun tocItems(): List<String> {
-        val out = ArrayList<String>()
-        (0 until book.chapterCount).forEach { i ->
-            val t = book.chapterTitle(i)
-            val label = if (t.isEmpty()) getString(R.string.chapter_fallback, i + 1) else t
-            // 章的切分碎片继承同名 -> 连续同名只显示第一条
-            if (out.isEmpty() || out.last() != label) out.add(label)
+    /** 目录行：锚点级条目（一章一条），没有标准目录时退回逐章占位 */
+    private fun tocRows(): List<EpubBook.TocEntry> {
+        val entries = book.tocEntryList()
+        if (entries.isNotEmpty()) {
+            val out = ArrayList<EpubBook.TocEntry>()
+            entries.forEach { e ->
+                val label = e.label.ifEmpty { getString(R.string.chapter_fallback, e.chapter + 1) }
+                // 章的切分碎片继承同名 -> 连续同名只保留第一条
+                if (out.isEmpty() || out.last().label != label) {
+                    out.add(EpubBook.TocEntry(label, e.chapter, e.anchor))
+                }
+            }
+            return out
         }
-        return out
+        return (0 until book.chapterCount).map { i ->
+            val t = book.chapterTitle(i)
+            EpubBook.TocEntry(
+                if (t.isEmpty()) getString(R.string.chapter_fallback, i + 1) else t,
+                i, null
+            )
+        }
     }
 
     private fun hideToc() {
