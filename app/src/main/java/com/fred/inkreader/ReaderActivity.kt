@@ -14,8 +14,10 @@ import android.os.Looper
 import android.text.style.ImageSpan
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ArrayAdapter
+import android.widget.BaseAdapter
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -412,21 +414,18 @@ class ReaderActivity : Activity() {
             Toast.makeText(this, R.string.export_empty, Toast.LENGTH_SHORT).show()
             return
         }
-        val rows = ArrayList<String>()
-        val targets = ArrayList<Highlight?>()   // 与 rows 同下标；null = 章节分组行
+        val rows = ArrayList<NoteRow>()
         var lastChapter = -1
         list.forEach { h ->
             if (h.chapter != lastChapter) {
                 lastChapter = h.chapter
-                rows.add(titleOf(h.chapter))
-                targets.add(null)
+                rows.add(NoteRow(titleOf(h.chapter), null))
             }
-            rows.add(previewOf(h))
-            targets.add(h)
+            rows.add(NoteRow(null, h))
         }
-        noteList.adapter = ArrayAdapter(this, android.R.layout.simple_list_item_1, rows)
+        noteList.adapter = NoteAdapter(rows)
         noteList.setOnItemClickListener { _, _, position, _ ->
-            val h = targets[position] ?: return@setOnItemClickListener   // 分组行不跳转
+            val h = rows[position].item ?: return@setOnItemClickListener   // 章节行不跳转
             hideNotes()
             loadChapter(h.chapter, 0, jump = h, skipDir = 0)
         }
@@ -437,8 +436,44 @@ class ReaderActivity : Activity() {
         notePanel.visibility = View.GONE
     }
 
-    private fun previewOf(h: Highlight): String =
-        h.text.trim().replace('\n', ' ').let { if (it.length > 30) it.take(30) + "…" else it }
+    /** 笔记面板的行：section 非空 = 章节标题行；item 非空 = 笔记条目行 */
+    private class NoteRow(val section: String?, val item: Highlight?)
+
+    /** md 式展示：章节(大字) > 摘要(中字) > 笔记正文(小字)，完整展开不截断 */
+    private inner class NoteAdapter(private val rows: List<NoteRow>) : BaseAdapter() {
+        override fun getCount(): Int = rows.size
+        override fun getItem(position: Int): NoteRow = rows[position]
+        override fun getItemId(position: Int): Long = position.toLong()
+
+        override fun getView(position: Int, convertView: View?, parent: ViewGroup): View {
+            val v = convertView ?: layoutInflater.inflate(R.layout.item_note, parent, false)
+            val tvSection = v.findViewById<TextView>(R.id.tvNoteSection)
+            val tvExcerpt = v.findViewById<TextView>(R.id.tvNoteExcerpt)
+            val tvBody = v.findViewById<TextView>(R.id.tvNoteBody)
+            val row = rows[position]
+            if (row.section != null) {
+                tvSection.visibility = View.VISIBLE
+                tvSection.text = row.section
+            } else {
+                tvSection.visibility = View.GONE
+            }
+            val h = row.item
+            if (h != null) {
+                tvExcerpt.visibility = View.VISIBLE
+                tvExcerpt.text = h.text.trim()
+                if (h.note.isBlank()) {
+                    tvBody.visibility = View.GONE
+                } else {
+                    tvBody.visibility = View.VISIBLE
+                    tvBody.text = h.note
+                }
+            } else {
+                tvExcerpt.visibility = View.GONE
+                tvBody.visibility = View.GONE
+            }
+            return v
+        }
+    }
 
     // ===== 导出（手动触发）=====
 
