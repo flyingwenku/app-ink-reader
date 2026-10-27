@@ -60,6 +60,7 @@ class ReaderActivity : Activity() {
     private lateinit var tvSelInfo: TextView
     private lateinit var topBar: LinearLayout
     private lateinit var bottomBar: LinearLayout
+    private var cutoutTop = 0
     private lateinit var prefs: ReaderPrefs
     private lateinit var noteStore: NoteStore
 
@@ -165,6 +166,7 @@ class ReaderActivity : Activity() {
         skipDir: Int = 1,
         skips: Int = 0
     ) {
+        applySafePadding()
         val contentW = pageView.width - pageView.paddingLeft - pageView.paddingRight
         val contentH = pageView.height - pageView.paddingTop - pageView.paddingBottom
         if (contentW <= 0 || contentH <= 0) {
@@ -582,7 +584,30 @@ class ReaderActivity : Activity() {
                 tvChapter.paddingRight,
                 tvChapter.paddingBottom
             )
+            // 正文也要让开开孔区：记录后重排
+            cutoutTop = sb
+            repaginate()
         }
+    }
+
+    /**
+     * 正文安全区：顶部让出开孔 + 一行，底部也让出一行。
+     *
+     * 为什么是"一整行"而不是刚好贴着开孔：开孔旁边只留几像素会让第一行字
+     * 贴着摄像头边缘，视觉上很难受；直接空一行最干净，也符合纸面留白。
+     */
+    private fun applySafePadding() {
+        val d = resources.displayMetrics.density
+        val side = (18 * d).toInt()
+        val lineH = (prefs.fontSizeSp * 1.7f * d).toInt()
+        val top = maxOf(lineH, cutoutTop + (4 * d).toInt())
+        pageView.setPadding(side, top, side, lineH)
+    }
+
+    /** 安全区变化后按当前位置重排（分页结果依赖可用高度） */
+    private fun repaginate() {
+        applySafePadding()
+        if (pageView.pageCount > 0) loadChapter(chapterIndex, pageView.currentPage)
     }
 
     /** 退路：顶部显示状态栏并染成纸色（是"纸色 + 时钟电量"，不是黑条） */
